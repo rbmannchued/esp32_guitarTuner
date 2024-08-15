@@ -6,14 +6,15 @@
 #include <arduinoFFT.h>
 #include <Wire.h>
 
+//#define largura_faixa 4
 
 unsigned int amostras = 1024;
 volatile int indice_amostrar = 1024;
 double amplitude_pico;
 double freq_pico;
 double dados_real[1024], dados_imag[1024];
-
-
+const char *notasNome[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+const byte notasFreq[12] = {65, 69, 73, 78, 82, 87, 92, 98, 104, 110, 116, 123};
 
 Adafruit_SSD1306 display = Adafruit_SSD1306();
 ArduinoFFT<double> FFT = ArduinoFFT<double>(dados_real,dados_imag,amostras,1024);
@@ -68,69 +69,85 @@ void amostra_calcula_FFT(){
 
   }
 }
-void afinador(){
-  float freq_central, freq_max, freq_min, largura_faixa;
-  char notacao[2];
-  if(freq_pico<65){
-    notacao[0] = '-'; notacao[1] = '-';
-    freq_min = 0;
-    freq_central =0;
-    freq_max = 0;
-    largura_faixa = 1;
-  }
-  if(freq_pico>75 && freq_pico<=79){
-    notacao[0] = 'D'; notacao[1] = '2';
-    freq_min =75;
-    freq_central =77;
-    freq_max = 79;
-    largura_faixa = 4;
-  }
+void afinador() {
+    float freq_central = 0, freq_max = 0, freq_min = 0;
+    float largura_faixa = 1;
+    char notacao[4] = "--";  // Ajuste para suportar notas da oitava superior
 
-  if(freq_pico>80 && freq_pico<=84){
-    notacao[0] = 'E'; notacao[1] = '2';
-    freq_min =80;
-    freq_central =82;
-    freq_max = 84;
-    largura_faixa = 4;
-  }
-
-  display.clearDisplay();
-  display.drawLine(0,0,0,63,1);
-  display.drawLine(0,0,82,0,1);
-  display.drawLine(82,0,82,63,1);
-  display.drawLine(0,63,82,63,1);
-
-  if(freq_pico<100)display.setCursor(96,9);
-  else display.setCursor(90,9);
-
-  display.setTextSize(2);
-  display.print(freq_pico, 0);
-  display.setCursor(97,45);
-  display.print(notacao);
-  display.setTextSize(1);
-  display.print("Hz");
-
-  for(float i = -0.7; i <= 0.7;i = i + 0.015){
-    display.drawPixel(41+sin(i)*50,62-cos(i)*50,1);
-  }
-    display.drawLine(1,61,81,61,0); //corrigir bugs visuais
-    display.drawLine(1,62,81,62,0);
-
-    float horizontal = (freq_pico - freq_central)*(66/largura_faixa)+41;
-    if(freq_central >= 68){
-      display.drawLine((int)horizontal,17+abs((horizontal=41)*0.36),41,60,1);
-    }else{
-      display.setTextSize(2);
-      display.setCursor(36,32);
-      display.print("?"); 
+    // Identifica a nota mais próxima
+    for (byte i = 0; i < 12; i++) {
+        if ((freq_pico > notasFreq[i] - 2) && (freq_pico <= notasFreq[i] + 2)) {
+            // Oitava base
+            notacao[0] = notasNome[i][0];
+            notacao[1] = notasNome[i][1] == '#' ? '#' : ' ';
+            notacao[2] = '2';  // Indica a oitava
+            notacao[3] = '\0';
+            freq_central = notasFreq[i];
+            freq_min = notasFreq[i] - 2;
+            freq_max = notasFreq[i] + 2;
+            largura_faixa = 4;
+            break;
+        } else if ((freq_pico > (notasFreq[i] * 2) - 2) && (freq_pico <= (notasFreq[i] * 2) + 2)) {
+            // Oitava superior
+            notacao[0] = notasNome[i][0];
+            notacao[1] = notasNome[i][1] == '#' ? '#' : ' ';
+            notacao[2] = '3';  // Indica a oitava superior
+            notacao[3] = '\0';
+            freq_central = notasFreq[i] * 2;
+            freq_min = (notasFreq[i] * 2) - 2;
+            freq_max = (notasFreq[i] * 2) + 2;
+            largura_faixa = 4;
+            break;
+        }
     }
 
-    display.drawCircle(41,59,3,1);
-    display.drawRect(41,13,3,10,1);
-    display.drawLine(8,24,10,27,1);
-    display.drawLine(73,24,71,27,1);
-    display.drawLine(23,16,24,19,1);
-    display.drawLine(58,16,57,19,1);
+    // Caso a frequência esteja fora do intervalo reconhecido
+    if (freq_pico < 65) {
+        notacao[0] = '-'; notacao[1] = '-'; notacao[2] = '\0';
+        freq_min = 0;
+        freq_central = 0;
+        freq_max = 0;
+        largura_faixa = 1;
+    }
+
+    display.clearDisplay();
+    display.drawLine(0, 0, 0, 63, 1);
+    display.drawLine(0, 0, 82, 0, 1);
+    display.drawLine(82, 0, 82, 63, 1);
+    display.drawLine(0, 63, 82, 63, 1);
+
+    if (freq_pico < 100) display.setCursor(96, 9);
+    else display.setCursor(90, 9);
+
+    display.setTextSize(2);
+    display.print(freq_pico, 0);
+    display.setCursor(97, 45);
+    display.print(notacao);
+    display.setTextSize(1);
+    display.print("Hz");
+
+    for (float i = -0.7; i <= 0.7; i = i + 0.015) {
+        display.drawPixel(41 + sin(i) * 50, 62 - cos(i) * 50, 1);
+    }
+
+    display.drawLine(1, 61, 81, 61, 0);  // Corrigir bugs visuais
+    display.drawLine(1, 62, 81, 62, 0);
+
+    float horizontal = (freq_pico - freq_central) * (66 / largura_faixa) + 41;
+    if (freq_central > 0) {
+        display.drawLine((int)horizontal, 17 + abs((horizontal - 41) * 0.36), 41, 60, 1);
+    } else {
+        display.setTextSize(2);
+        display.setCursor(36, 32);
+        display.print("?"); 
+    }
+
+    display.drawCircle(41, 59, 3, 1);
+    display.drawRect(41, 13, 3, 10, 1);
+    display.drawLine(8, 24, 10, 27, 1);
+    display.drawLine(73, 24, 71, 27, 1);
+    display.drawLine(23, 16, 24, 19, 1);
+    display.drawLine(58, 16, 57, 19, 1);
 
     display.display();
 }
