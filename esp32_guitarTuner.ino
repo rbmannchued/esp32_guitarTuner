@@ -98,7 +98,18 @@ void afinador() {
             freq_max = (notasFreq[i] * 2) + 2;
             largura_faixa = 4;
             break;
-        }
+        }else if ((freq_pico > (notasFreq[i] * 3) - 2) && (freq_pico <= (notasFreq[i] * 3) + 2)) {
+            // Oitava superior
+            notacao[0] = notasNome[i][0];
+            notacao[1] = notasNome[i][1] == '#' ? '#' : ' ';
+            notacao[2] = '4';  // Indica a oitava superior
+            notacao[3] = '\0';
+            freq_central = notasFreq[i] * 3;
+            freq_min = (notasFreq[i] * 3) - 2;
+            freq_max = (notasFreq[i] * 3) + 2;
+            largura_faixa = 4;
+            break;
+        };
     }
 
     // Caso a frequência esteja fora do intervalo reconhecido
