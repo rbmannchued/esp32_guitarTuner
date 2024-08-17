@@ -1,4 +1,3 @@
-// codigo baseado e adaptado de Jonatan Zientarski > https://www.youtube.com/@jonatanrrz
 
 
 #include <Adafruit_SSD1306.h>
@@ -6,15 +5,82 @@
 #include <arduinoFFT.h>
 #include <Wire.h>
 
-//#define largura_faixa 4
 
 unsigned int amostras = 1024;
 volatile int indice_amostrar = 1024;
 double amplitude_pico;
 double freq_pico;
 double dados_real[1024], dados_imag[1024];
-const char *notasNome[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-const byte notasFreq[12] = {65, 69, 73, 78, 82, 87, 92, 98, 104, 110, 116, 123};
+double lastFrequency = 0;
+int lastNoteIndex = 0;
+int lastNoteDiff = 0;
+const char *noteNames[] = {"A","A#","B","C","C#","D","D#","E","F","F#","G","G#"};
+const double noteFrequencies[] = {
+  55.00,  // A1
+  58.27,  // A#1
+  61.74,  // B1
+  65.41,  // C2
+  69.30,  // C#2
+  73.42,  // D2
+  77.78,  // D#2
+  82.41,  // E2
+  87.31,  // F2
+  92.50,  // F#2
+  98.00,  // G2
+  103.83, // G#2
+  110.00, // A2
+  116.54, // A#2
+  123.47, // B2
+  130.81, // C3
+  138.59, // C#3
+  146.83, // D3
+  155.56, // D#3
+  164.81, // E3
+  174.61, // F3
+  185.00, // F#3
+  196.00, // G3
+  207.65, // G#3
+  220.00, // A3
+  233.08, // A#3
+  246.94, // B3
+  261.63, // C4
+  277.18, // C#4
+  293.66, // D4
+  311.13, // D#4
+  329.63, // E4
+  349.23, // F4
+  369.99, // F#4
+  392.00, // G4
+  415.30, // G#4
+  440.00, // A4
+  466.16, // A#4
+  493.88, // B4
+  523.25, // C5
+  554.37, // C#5
+  587.33, // D5
+  622.25, // D#5
+  659.26, // E5
+  698.46, // F5
+  739.99, // F#5
+  783.99, // G5
+  830.61, // G#5
+  880.00, // A5
+  932.33, // A#5
+  987.77, // B5
+  1046.50, // C6
+  1108.73, // C#6
+  1174.66, // D6
+  1244.51, // D#6
+  1318.51, // E6
+  1396.91, // F6
+  1479.98, // F#6
+  1567.98, // G6
+  1661.22, // G#6
+  1760.00, // A6
+};
+
+
+
 
 Adafruit_SSD1306 display = Adafruit_SSD1306();
 ArduinoFFT<double> FFT = ArduinoFFT<double>(dados_real,dados_imag,amostras,1024);
@@ -35,6 +101,52 @@ void IRAM_ATTR onTimer(){
 }
 
 
+const int getClosestNoteIndex(double frequency) {
+  double minDiff = abs(frequency - noteFrequencies[0]);
+  int closestIndex = 0;
+  
+  for (int i = 1; i < sizeof(noteFrequencies) / sizeof(noteFrequencies[0]); i++) {
+    double diff = abs(frequency - noteFrequencies[i]);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closestIndex = i;
+    }
+  }
+
+  return closestIndex;
+}
+const double getNoteDiff(double frequency, int closestIndex) {
+  double noteGap;
+  double frequencyGap;
+
+  if(frequency<noteFrequencies[closestIndex]){
+    noteGap = noteFrequencies[closestIndex]-noteFrequencies[closestIndex-1];
+  }else{
+    noteGap = noteFrequencies[closestIndex]-noteFrequencies[closestIndex+1];
+  }
+  
+  frequencyGap = abs(frequency-noteFrequencies[closestIndex])/noteGap*-100;
+  return (int)frequencyGap;
+}
+void displayResult(int noteDiff, double frequency, int noteIndex){
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 10);
+
+  display.clearDisplay();
+  display.drawLine(64,0,(64+(128*noteDiff/100)),0, WHITE);
+  display.drawLine(64,1,(64+(128*noteDiff/100)),1, WHITE);
+  display.drawLine(64,2,(64+(128*noteDiff/100)),2, WHITE);
+  display.drawLine(64,3,(64+(128*noteDiff/100)),3, WHITE);
+  display.drawLine(64,4,(64+(128*noteDiff/100)),4, WHITE);
+  display.print("  ");
+  display.print(frequency);
+  display.println("hz");
+  display.setTextSize(4);
+  display.print("  ");
+  display.print(noteNames[noteIndex % 12]);
+  display.display(); 
+}
 
 void setup() {
   Wire.begin();
@@ -51,8 +163,20 @@ void setup() {
 }
 
 void loop() {
-  afinador();
+  
   amostra_calcula_FFT();
+  double frequency = freq_pico * ((1024 / 2.0) / (1024 / 2.0));
+    int noteIndex = getClosestNoteIndex(frequency);
+   if(frequency==0 || noteIndex==60 || noteIndex==0 ){
+    displayResult(lastNoteDiff, lastFrequency, lastNoteIndex);
+  }else{
+    int noteDiff = getNoteDiff(frequency, noteIndex);
+    displayResult(noteDiff, frequency, noteIndex);
+    lastNoteDiff = noteDiff;
+    lastFrequency = frequency;
+    lastNoteIndex = noteIndex;
+  }
+
 }
 void amostra_calcula_FFT(){
   indice_amostrar = 0;
@@ -69,96 +193,4 @@ void amostra_calcula_FFT(){
 
   }
 }
-void afinador() {
-    float freq_central = 0, freq_max = 0, freq_min = 0;
-    float largura_faixa = 1;
-    char notacao[4] = "--";  // Ajuste para suportar notas da oitava superior
 
-    // Identifica a nota mais próxima
-    for (byte i = 0; i < 12; i++) {
-        if ((freq_pico > notasFreq[i] - 2) && (freq_pico <= notasFreq[i] + 2)) {
-            // Oitava base
-            notacao[0] = notasNome[i][0];
-            notacao[1] = notasNome[i][1] == '#' ? '#' : ' ';
-            notacao[2] = '2';  // Indica a oitava
-            notacao[3] = '\0';
-            freq_central = notasFreq[i];
-            freq_min = notasFreq[i] - 2;
-            freq_max = notasFreq[i] + 2;
-            largura_faixa = 4;
-            break;
-        } else if ((freq_pico > (notasFreq[i] * 2) - 2) && (freq_pico <= (notasFreq[i] * 2) + 2)) {
-            // Oitava superior
-            notacao[0] = notasNome[i][0];
-            notacao[1] = notasNome[i][1] == '#' ? '#' : ' ';
-            notacao[2] = '3';  // Indica a oitava superior
-            notacao[3] = '\0';
-            freq_central = notasFreq[i] * 2;
-            freq_min = (notasFreq[i] * 2) - 2;
-            freq_max = (notasFreq[i] * 2) + 2;
-            largura_faixa = 4;
-            break;
-        }else if ((freq_pico > (notasFreq[i] * 3) - 2) && (freq_pico <= (notasFreq[i] * 3) + 2)) {
-            // Oitava superior
-            notacao[0] = notasNome[i][0];
-            notacao[1] = notasNome[i][1] == '#' ? '#' : ' ';
-            notacao[2] = '4';  // Indica a oitava superior
-            notacao[3] = '\0';
-            freq_central = notasFreq[i] * 3;
-            freq_min = (notasFreq[i] * 3) - 2;
-            freq_max = (notasFreq[i] * 3) + 2;
-            largura_faixa = 4;
-            break;
-        };
-    }
-
-    // Caso a frequência esteja fora do intervalo reconhecido
-    if (freq_pico < 65) {
-        notacao[0] = '-'; notacao[1] = '-'; notacao[2] = '\0';
-        freq_min = 0;
-        freq_central = 0;
-        freq_max = 0;
-        largura_faixa = 1;
-    }
-
-    display.clearDisplay();
-    display.drawLine(0, 0, 0, 63, 1);
-    display.drawLine(0, 0, 82, 0, 1);
-    display.drawLine(82, 0, 82, 63, 1);
-    display.drawLine(0, 63, 82, 63, 1);
-
-    if (freq_pico < 100) display.setCursor(96, 9);
-    else display.setCursor(90, 9);
-
-    display.setTextSize(2);
-    display.print(freq_pico, 0);
-    display.setCursor(97, 45);
-    display.print(notacao);
-    display.setTextSize(1);
-    display.print("Hz");
-
-    for (float i = -0.7; i <= 0.7; i = i + 0.015) {
-        display.drawPixel(41 + sin(i) * 50, 62 - cos(i) * 50, 1);
-    }
-
-    display.drawLine(1, 61, 81, 61, 0);  // Corrigir bugs visuais
-    display.drawLine(1, 62, 81, 62, 0);
-
-    float horizontal = (freq_pico - freq_central) * (66 / largura_faixa) + 41;
-    if (freq_central > 0) {
-        display.drawLine((int)horizontal, 17 + abs((horizontal - 41) * 0.36), 41, 60, 1);
-    } else {
-        display.setTextSize(2);
-        display.setCursor(36, 32);
-        display.print("?"); 
-    }
-
-    display.drawCircle(41, 59, 3, 1);
-    display.drawRect(41, 13, 3, 10, 1);
-    display.drawLine(8, 24, 10, 27, 1);
-    display.drawLine(73, 24, 71, 27, 1);
-    display.drawLine(23, 16, 24, 19, 1);
-    display.drawLine(58, 16, 57, 19, 1);
-
-    display.display();
-}
